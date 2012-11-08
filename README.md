@@ -1,4 +1,4 @@
 bellite-php
 ===========
 
-Java bindings for the Bellite.io library using JSON-RPC
+PHP bindings for the Bellite.io library using JSON-RPC
