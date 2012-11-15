@@ -6,6 +6,29 @@
 
     $id = 0;
 
+    function partial($func)
+    {
+        if (func_num_args() < 1){
+            return null;
+        }
+
+        $params = array_slice(func_get_args(),1);
+        $func   = func_get_arg(0);
+
+        //print_r(func_get_args());
+
+        return function() use ($params, $func)
+        {
+            $new_params = func_get_args();
+            $merged_params = $params;
+            foreach ( $new_params as $key => $value){
+                $merged_params[$key] = $new_params[$key];
+            }
+
+            call_user_func($func, $merged_params);
+        };
+    }
+
     function _pop(&$array, $key, $default_value=false)
     {
         if (array_key_exists($key, $array))
@@ -68,7 +91,7 @@
         public function fileno();
         public function readable();
         public function handle_read_event();
-        public function writeable();
+        public function writable();
         public function exceptable();
         public function handle_write_event();
         public function handle_expt_event();
@@ -78,7 +101,7 @@
 
     class async
     {
-        static private var $map = array();
+        static protected $map = array();
 
         static function loop($timeout, $map)
         {
@@ -99,25 +122,31 @@
                 }
             }
             if ($timeout == NULL){
-                $changedCount =  socket_read($readable, $writable, $excepted, NULL);
+                $changedCount =  socket_select($readable, $writable, $excepted, NULL);
             }
             else {
-                $changedCount =  socket_read($readable, $writable, $excepted, floor($timeout),($timeout - floor($timeout))*1000000);
+                $changedCount =  socket_select($readable, $writable, $excepted, floor($timeout),($timeout - floor($timeout))*1000000);
+//                print ("SELECT " .floor($timeout) . " " . ($timeout - floor($timeout))*1000000 . "\r\n");
             }
 
             if ($changedCount == 0){
+ //               print ("SELECT: NOTHING\r\n");
                 return false;
             }
+  //          print ("SELECT: SOMETHING " . $changedCount . "\r\n");
 
 
             foreach ($map as $obj){
                 if ($obj->writable() && array_search($obj->fileno(), $writeable) !== false){
+                    print ("handle write " . $obj->fileno() . "\r\n");
                     $obj->handle_write_event();
                 }
                 if ($obj->readable() && array_search($obj->fileno(), $readable) !== false){
+//                    print ("handle read " . $obj->fileno() . "\r\n");
                     $obj->handle_read_event();
                 }
                 if ($obj->exceptable() && array_search($obj->fileno(), $excepted) !== false){
+                    print ("handle write " . $obj->fileno() . "\r\n");
                     $obj->handle_expt_event();
                 }
             }
@@ -130,7 +159,7 @@
 
     class BelliteJsonRpcApi 
     {
-        function __construct($cred = false)
+        public function __construct($cred = false)
         {
             $cred = $this->findCredentials($cred);
             if ($cred){
@@ -138,17 +167,17 @@
             }
         }
 
-        function auth($token)
+        public function auth($token)
         {
             return $this->_invoke('auth',array($token));
         }
 
-        function version()
+        public function version()
         {
             return $this->_invoke('version');
         }
 
-        function ping()
+        public function ping()
         {
             return $this->_invoke('ping');
         }
@@ -212,12 +241,12 @@
             return false;
         }
 
-        private function _connect($cred)
+        protected function _connect($cred)
         {
             throw new NotImplementedException();
         }
 
-        private function _invoke($method, $params = array())
+        protected function _invoke($method, $params = array())
         {
             throw new NotImplementedException();
         }
@@ -225,39 +254,40 @@
 
     class BelliteJsonRpc extends BelliteJsonRpcApi
     {
-        private $_resultMap = array();
-        private $_evtTypeMap = array();
-        private $_logging    = false;
-        private $_nextMsgId  = 100;
+        protected $_resultMap = array();
+        protected $_evtTypeMap = array();
+        protected $_logging    = false;
+        protected $_nextMsgId  = 100;
 
-        function __construct($cred=false, $logging=false)
+        public function __construct($cred=false, $logging=false)
         {
             parent::__construct($cred);
             $this->_logging = $logging;
         }
 
-        private function _notify ($method, $params)
+        protected function _notify ($method, $params)
         {
-            return $this->_sendJsonRpc($method, $params)
+            return $this->_sendJsonRpc($method, $params);
         }
 
-        private function _invoke($method, $params)
+        protected function _invoke($method, $params = array())
         {
             $msgId = $this->_nextMsgId;
             $this->_nextMsgId = $msgId +1;
             $res   = $this->_newResult($msgId);
             $this->_sendJsonRpc($method, $params, $msgId);
-            return $res->promise();
+            return $res->promise; // var, not func
         }
 
-        private function _newResult($msgId)
+        protected function _newResult($msgId)
         {
             $res = deferred();
+            echo "_newResutl: " . get_class($res) . "\r\n";
             $this->_resultMap[$msgId] = $res;
             return $res;
         }
 
-        private function _sendJsonRpc($method, $params=false, $msgId=false)
+        protected function _sendJsonRpc($method, $params=false, $msgId=false)
         {
             $msg = array("jsonrpc" => "2.0", "method" => $method, 'params' => $params);
             if ($msgId){
@@ -267,23 +297,24 @@
             return $this->_sendMessage(json_encode($msg));
         }
 
-        private function _sendMessage($msg)
+        protected function _sendMessage($msg)
         {
             throw new NotImplementedException();
         }
 
         public function logSend($msg)
         {
-            print("send ==> " . json_encode($msg));
+            print("send ==> " . json_encode($msg)) . "\r\n";
         }
         
         public function logRecv($msg)
         {
-            print("recv <== " . json_encode($msg));
+            print("recv <== " . json_encode($msg)) . "\r\n";
         }
 
-        private function _recvJsonRpc($msgList)
+        protected function _recvJsonRpc($msgList)
         {
+//            print("_recvJsonRpc  :" . print_r($msgList,true));
             foreach ($msgList as $msg){
                 $msg = json_decode($msg, true);
                 $isCall = array_key_exists('method',$msg);
@@ -311,33 +342,44 @@
 
         public function on_rpc_response($msg)
         {
+//            print("RPC RESPONSE " . print_r($this->_resultMap,true));
+//            print("RPC RESPONSE MSG " . print_r($msg,true));
             $tgt = _pop($this->_resultMap, $msg['id'], false);
+//            print("RPC RESPONSE TGT" . get_class($tgt));
             if (!$tgt){
                 return;
             }
             if (array_key_exists('error', $msg)){
-                $tgt->reject($msg['error']);
+                print("RPC RESPONSE TGT REJECT" . $msg['error']);
+                $reject = $tgt->reject;
+                $reject($msg['error']);
             }
             else {
-                $tgt->resolve(array_key_exists('result',$msg) ? $msg['result'] : false);
+ //               print("RPC RESPONSE TGT RESOLVE" . print_r($msg['result'], true));
+                $resolve = $tgt->resolve;
+                $resolve(array_key_exists('result',$msg) ? $msg['result'] : false);
             }
         }
 
         public function on_connect($cred)
         {
-            $promise = $this->auth($cred['token'])
-            $promise->then($this->on_auth_succeeded, $this->on_auth_failed);
+            $promise = $this->auth($cred['token']);
+            $then = $promise->then;
+            $then(array($this,'on_auth_succeeded'), array($this,'on_auth_failed'));
+//            echo '$promise type: ' . get_class($promise) . " ". print_r($promise, true) . "\r\n";
         }
 
         public function on_auth_succeeded($msg)
         {
-            $this->emit('auth',true, $msg);
+            echo ("AUTH OK ON\r\n");
+            $this->emit('auth',array(true, $msg));
             $this->emit('ready');
         }
 
         public function on_auth_failed($msg)
         {
-            $this->emit('auth', false, $msg);
+            print ("AUTH FAILED");
+            $this->emit('auth', array(false, $msg));
         }
 
 
@@ -351,24 +393,26 @@
 
         public function on($key, $fn=false)
         {
-            function bindEvent($fn)
+            $bindEvent = function($fn) use (&$key, &$fn)
             {
-                $val = _setdefault($this->_evtTypeMap, $key, array());
-                $val[] = $fn;
+                _setdefault($this->_evtTypeMap, $key, array());
+                $this->_evtTypeMap[$key][] = $fn;
                 return $fn;
-            }
+            };
             if ($fn === false){
-                return bindEvent;
+                return $bindEvent;
             }
             else {
-                return bindEvent($fn);
+                return $bindEvent($fn);
             }
         }
 
-        public function emit($key, $params)
+        public function emit($key, $params = array())
         {
             if (array_key_exists($key, $this->_evtTypeMap)){
+//                print("evtmap for $key  " . print_r($this->_evtTypeMap[$key], true));
                 foreach ($this->_evtTypeMap[$key] as $fn){
+                    //print("FN emit: " . print_r($fn, true));
                     $fn($this, $params);
                 }
             }
@@ -377,20 +421,25 @@
 
     class Bellite extends BelliteJsonRpc implements asyncConnection
     {
-        $timeout_conn = 0.5;
-        $timeout_send = 0.01;
-        $timeout_recv = 0.000001;
+        public $timeout_conn = 0.5;
+        public $timeout_send = 0.01;
+        public $timeout_recv = 0.000001;
 
-        $conn = false;
-        private var $_buf = ''; 
+        public $conn = false;
+        protected $_buf = ''; 
 
-        public function _connect($cred)
+        public function __construct($cred=false, $logging=false)
+        {
+            parent::__construct($cred,$logging);
+        }
+
+        protected function _connect($cred)
         {
             $this->conn = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-            if (!socket_set_nonblock($socket)){
+            if ($this->conn && !socket_connect($this->conn, $cred['host'], $cred['port'])){
                 $this->conn = false;
             }
-            if ($this->conn && !socket_connect($socket, $cred['host'], $cred['port'])){
+            if (!socket_set_nonblock($this->conn)){
                 $this->conn = false;
             }
             if ($this->conn){
@@ -398,7 +447,7 @@
             }
         }
 
-        private function _sendMessage($msg)
+        protected function _sendMessage($msg)
         {
             if (!$this->isConnected()){
                 return false;
@@ -413,8 +462,10 @@
 
         public function close()
         {
+            echo "CLOSE!";
             if ($this->conn){
                 socket_close($this->conn);
+                $this->conn = false;
             }
             else {
                 return false;
@@ -432,24 +483,36 @@
         }
         public function handle_read_event()
         {
+//            print ("in: handle_read_event\r\n");
             if (!$this->isConnected()){
                 return false;
             }
+            //print ("in: handle_read_event: connected\r\n");
             $buf = $this->_buf;
+            //print ("in: handle_read_event: buf '" . $buf . "'\r\n");
+            $part = '';
             while (true){
-                $part = socket_read($socket, 4096);
-                if ($part === false){
+                $len = @socket_recv($this->conn, $part, 4096, MSG_DONTWAIT);
+                //print ("in: handle_read_event: part: '" . $buf . "' " . strlen($buf) . "\r\n");
+                if ($len === false && socket_last_error($this->conn) != 11){
+                    //print ("len false");
                     $this->close();
                     break;
                 }
-                $_buf .= $part;
+                if (!$len){
+                    break;
+                }
+                $buf .= $part;
             }
-            $_buf = explode('\0',$_buf); #??
-            $this->_buf = array_pop($this->_buf);
-            $this->_recvJsonRpc($_buf);
+            $buf = explode("\0",$buf); #??
+            //print ("in: handle_read_event: buf explode: " . print_r($buf,true) . "\r\n");
+            $this->_buf = array_pop($buf);
+            //print ("in: handle_read_event: this->buf : " . print_r($buf,true) . "\r\n");
+            $this->_recvJsonRpc($buf);
             return true;
         }
-        public function writeable()
+
+        public function writable()
         {
             return false;
         }
@@ -465,10 +528,12 @@
         }
         public function handle_expt_event()
         {
+            print ("EXPT len false");
             $this->close();
         }
         public function handle_close()
         {
+            print ("HANDLE len false");
             $this->close();
         }
         public function handle_error()
@@ -486,10 +551,10 @@
 
     class PromiseApi
     {
-        public var $then = false;
+        public $then = false;
         public function always($fn)
         {
-            return $this->$then($fn, $fn)
+            return $this->$then($fn, $fn);
         }
 
         public function fail($failure)
@@ -505,10 +570,12 @@
 
     class Promise extends PromiseApi
     {
-        function __construct($then)
+        public function __construct($then)
         {
             if ($then){
                 $this->then = $then;
+//                echo "PROMISE THEN";
+                print_r($this->then);
             }
         }
 
@@ -520,12 +587,19 @@
 
     class Future extends PromiseApi
     {
-        public var $promise;
-        public var $resolve = false;
-        public var $reject = false;
+        public $promise;
+        public $resolve = false;
+        public $reject = false;
 
-        function __construct($then, $resolve=false, $reject=false)
+        static public $counter = 0;
+        public $myCounter = 0;
+
+        public function __construct($then, $resolve=false, $reject=false)
         {
+            $this->myCounter = self::$counter;
+            print("Future #" . $this->myCounter . "\r\n");
+            self::$counter++;
+
             $this->promise = new Promise($then);
             if ($resolve){
                 $this->resolve = $resolve;
@@ -535,7 +609,7 @@
             }
         }
 
-        function __call($name, $args)
+/*        function __call($name, $args)
         {
             if ($name == 'resolve' && $this->resolve){
                 $fn = $this->resolve;
@@ -545,7 +619,7 @@
                 $fn = $this->rejecct;
                 $fn($args[0]);
             }
-        }
+        } */
 
         function then()
         {
@@ -557,18 +631,26 @@
     {
         $cb = array();
         $answer = false;
+        $future = false;
+        $reject = false;
+        $resolve = false;
 
-        function then($success=false, $failure=false)
+        $then=function($success=false, $failure=false) use (&$cb, &$answer, &$future)
         {
+            print_r('IN THEN for future #'. $future->myCounter);
             $cb[] = array($success, $failure);
             if ($answer){
-                $answer()
+                call_user_func($answer);
             }
-            return $this->promise //TODO: how it should works? func as object...
-        }
+            return $future->promise; //TODO: how it should works? func as object...
+        };
 
-        function resolve($result)
+
+        $resolve = function($result) use (&$cb, &$answer, &$future, &$resolve, &$reject)
         {
+            print ("closure RESOLVE " .print_r($result, true));
+            //print ("closure RESOLVE CB" .print_r($cb, true));
+            //print ("closure RESOLVE this" .print_r($this, true));
             while (count($cb) > 0){
                 $pair    = array_pop($cb);
                 $success = $pair[0];
@@ -577,7 +659,7 @@
                     if ($success){
                         $res = $success($result);
                         if ($res){
-                            $result = $res
+                            $result = $res;
                         }
                     }
                 } catch (Exception $err){
@@ -592,33 +674,36 @@
                     }
                 }
             }
-            $answer = partial(resolve,$result);//wtf partial?
-        }
+            $answer = partial($resolve,$result);//wtf partial?
+        };
 
-        function reject($error)
+        $reject = function ($error) use (&$cb, &$answer, &$future, &$reject)
         {
             while (count($cb) > 0){
                 $pair    = array_pop($cb);
                 $failure = $pair[1];
                 try {
                     if ($failure){
-                        $res = $failure($result);
+                        $res = $failure($error);
                         if ($res){
-                            $error = $res
+                            $error = $res;
                         }
                     }
                 } catch (Exception $err){
-                    $res = $err
+                    $res = $err;
                     if (count($cb) == 0){
                         //some exphook
                     }
                 }
             }
-            $answer = partial(resolve,$result);//wtf partial?
-        }
+            $answer = partial($reject,$error);//wtf partial?
+        };
 
-        $this = Future(then, resolve, reject);
-        return $this;
+        //$this = Future(then, resolve, reject); //
+        //return $this;
+        $future = new Future($then, $resolve, $reject);
+//        print ("NEW FUTURE #" . $future->myCounter . " " . print_r($future, true));
+        return $future;
     }
 
 
@@ -632,10 +717,23 @@
 
 //    print_r(array( $host, $port, $token));
 
-    $bel = new BelliteJsonRpc();
+//    print ("!!!!" .print_r(explode("\0", "aaaa\0"),true));
+    $app = new Bellite();
+    $app->ready(function() use (&$app){
+        print ("READY");
+        $app->ping();
+        $app->version();
+        $app->perform(142, "echo", array("name" => array(false, true, 42, "value")));
+    });
+    while (true){
+        async::loop(false,array($app));
+        async::loop(false,array($app));
+        async::loop(false,array($app));
+    }
+
 //    print_r ($api->findCredentials());
 
 //    print_r($_ENV);
 
 
-    jsonRpcRequest($host, $port, "ping", array("name" => "lalala"));
+//    jsonRpcRequest($host, $port, "ping", array("name" => "lalala"));
