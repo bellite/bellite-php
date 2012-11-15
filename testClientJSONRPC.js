@@ -11,7 +11,7 @@
 function createMockBelliteServer(ns) {
     var self = {
         server: require('net').createServer(),
-        token: require('crypto').randomBytes(8).toString('hex'),
+        token: ns.token || require('crypto').randomBytes(8).toString('hex'),
         shutdownTest: function() {
             self.shutdownTest = null;
             if (self.server)
@@ -22,9 +22,9 @@ function createMockBelliteServer(ns) {
 
     self.server.on('listening', function () {
         var addr = this.address()
-        console.log(addr);
         self.env = addr.address+':'+addr.port+'/'+self.token
         process.env.BELLITE_SERVER = self.env
+        console.log('Serving BELLITE_SERVER="'+ process.env.BELLITE_SERVER +'"')
         ns.listening();
     })
 
@@ -60,7 +60,6 @@ function createMockBelliteServer(ns) {
 
         var connBuf='';
         conn.on('data', function(data) {
-            console.log("data: " + data + "\r\n")
             data = (connBuf+data).split('\0')
             connBuf = data.pop()
             while (data.length) {
@@ -80,13 +79,14 @@ function createMockBelliteServer(ns) {
     self.server.on('error', function(err) {
         ns.server_error(err) })
 
-    self.server.listen(0, '127.0.0.1')
+    self.server.listen(ns.port || 0, '127.0.0.1')
     return self;
 }
+exports.createMockBelliteServer = createMockBelliteServer;
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-function testBelliteServer(opt, doneCallback) {
+function testBelliteJSONRPC(opt, doneCallback) {
     opt.log = opt.log || {};
     function log(key, args) {
         var log=opt.log[key];
@@ -99,7 +99,6 @@ function testBelliteServer(opt, doneCallback) {
     var rpc = {
         connect: function(api) {
             log('connect')
-            console.log('connected!!\r\n')
             this.api = api;
             this.evtCtx = {}
             return this },
@@ -164,6 +163,7 @@ function testBelliteServer(opt, doneCallback) {
     };
 
     var test = createMockBelliteServer({
+        port: opt.port, token: opt.token,
         listening: function() {
             opt.execClient(spawnClient) },
         server_close: function() {},
@@ -181,25 +181,22 @@ function testBelliteServer(opt, doneCallback) {
         return proc }
 
     function done(err) {
-        clearTimeout(done.timer);
+        if (done.timer)
+            clearTimeout(done.timer);
         if (test.shutdownTest) {
             test.shutdownTest()
             setTimeout(function() { doneCallback(err, opt.log, opt) }, 100)
         }}
-    done.timer = setTimeout(function() {
-        log('timeout'); done('timeout') }, opt.timeout || 2000)
+    if (opt.timeout!==false)
+        done.timer = setTimeout(function() {
+            log('timeout'); done('timeout') }, opt.timeout || 2000)
 }
+exports.testBelliteJSONRPC = testBelliteJSONRPC;
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-var assert=require('assert');
-
-testBelliteServer({
-    execClient: function(spawn) {
-        spawn('php', [__dirname+'/first_test.php'])
-    },
-    timeout: 2000,
-}, function(err, log, opt) {
+function assetTestResults(err, log, opt) {
+    var assert=require('assert');
     try {
         assert.equal(err, null, "terminated with an error")
 
@@ -238,4 +235,19 @@ testBelliteServer({
 
         process.exit(1) // failure
     }
-})
+}
+exports.assetTestResults = assetTestResults;
+
+if (!module.parent) {
+    // test the bellist JSON-RPC interactions
+    testBelliteJSONRPC({
+        timeout: 2000,
+        //timeout: false,
+        //port: 3099,
+        //token: 'bellite-demo-host',
+
+        execClient: function(spawn) {
+            spawn('php', [__dirname+'/first_test.php'])
+        }
+    }, assetTestResults)
+}
