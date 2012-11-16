@@ -140,7 +140,7 @@
 
             if ($changedCount == 0){
  //               print ("SELECT: NOTHING\r\n");
-                return false;
+                return true;
             }
   //          print ("SELECT: SOMETHING " . $changedCount . "\r\n");
 
@@ -159,6 +159,7 @@
                     $obj->handle_expt_event();
                 }
             }
+            return true;
         }
     }
 
@@ -749,10 +750,8 @@
         $app->bindEvent(0,"testEvent", 42, array('testCtx' => true));
         $app->perform(0,"testEvent");
     });
-    while (true){
-        async::loop(false,array($app));
-        async::loop(false,array($app));
-        async::loop(false,array($app));
+
+    while (async::loop(false,array($app))){
     }
 
 //    print_r ($api->findCredentials());
