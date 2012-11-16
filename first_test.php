@@ -199,7 +199,7 @@
             return $this->_invoke('respondsTo', array($selfId, $cmd));
         }
 
-        function perform($selfId, $cmd, $params=false)
+        function perform($selfId, $cmd, $params=null)
         {
             if (!$selfId){
                 $selfId = 0;
@@ -207,7 +207,7 @@
             return $this->_invoke('perform', array($selfId, $cmd, $params));
         }
 
-        function bindEvent($selfId=0, $evtType='*', $res=-1, $ctx=false)
+        function bindEvent($selfId=0, $evtType='*', $res=-1, $ctx=null)
         {
             if (!$selfId){
                 $selfId = 0;
@@ -215,15 +215,15 @@
             return $this->_invoke('bindEvent', array($selfId, $evtType, $res, $ctx));
         }
 
-        function unbindEvent($selfId=0, $evtType=false)
+        function unbindEvent($selfId=0, $evtType=null)
         {
             if (!$selfId){
                 $selfId = 0;
             }
-            return $this->_invoke('perform', array($selfId, $evtType));
+            return $this->_invoke('unbindEvent', array($selfId, $evtType));
         }
 
-        function findCredentials($cred=false)
+        function findCredentials($cred=null)
         {
             if (!$cred){
                 $cred = getenv('BELLITE_SERVER');
