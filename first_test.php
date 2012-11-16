@@ -112,14 +112,23 @@
             $changedCount = 0;
             foreach ($map as $obj){
                 if ($obj->writable()){
-                    $writable[] = $obj->fileno();
+                    if ($obj->fileno()){
+                        $writable[] = $obj->fileno();
+                    }
                 }
                 if ($obj->readable()){
-                    $readable[] = $obj->fileno();
+                    if ($obj->fileno()){
+                        $readable[] = $obj->fileno();
+                    }
                 }
                 if ($obj->exceptable()){
-                    $excepted[] = $obj->fileno();
+                    if ($obj->fileno()){
+                        $excepted[] = $obj->fileno();
+                    }
                 }
+            }
+            if (count($readable) == 0 && count($writable) == 0 && count($excepted) == 0){
+                return false;
             }
             if ($timeout == NULL){
                 $changedCount =  socket_select($readable, $writable, $excepted, NULL);
@@ -724,6 +733,23 @@
         $app->ping();
         $app->version();
         $app->perform(142, "echo", array("name" => array(false, true, 42, "value")));
+
+        $app->bindEvent(118, "*");
+        $app->unbindEvent(118, "*");
+
+        $app->on('testEvent', function($app, $eobj){
+            print "TEST EVENT\r\n";
+            print_r($eobj);
+            if (isset($eobj['evt'])){
+                $app->perform(0,$eobj['evt']);
+            }
+            else {
+                $app->close();
+            }
+        });
+
+        $app->bindEvent(0,"testEvent", 42, array('testCtx' => true));
+        $app->perform(0,"testEvent");
     });
     while (true){
         async::loop(false,array($app));
