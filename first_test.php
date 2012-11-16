@@ -498,18 +498,18 @@
             $buf = $this->_buf;
             //print ("in: handle_read_event: buf '" . $buf . "'\r\n");
             $part = '';
+            $pkt_count = 0;
             while (true){
                 $len = @socket_recv($this->conn, $part, 4096, MSG_DONTWAIT);
                 //print ("in: handle_read_event: part: '" . $buf . "' " . strlen($buf) . "\r\n");
-                if ($len === false && socket_last_error($this->conn) != 11){
-                    //print ("len false");
-                    $this->close();
-                    break;
-                }
                 if (!$len){
+                    if ($pkt_count===0 && socket_last_error($this->conn) != 11) {
+                        $this->close();
+                    }
                     break;
                 }
                 $buf .= $part;
+                $pkt_count++;
             }
             $buf = explode("\0",$buf); #??
             //print ("in: handle_read_event: buf explode: " . print_r($buf,true) . "\r\n");
