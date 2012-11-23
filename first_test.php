@@ -17,6 +17,7 @@
 
         //print_r(func_get_args());
 
+//closure
         return function() use ($params, $func)
         {
             $new_params = func_get_args();
@@ -361,12 +362,12 @@
             if (array_key_exists('error', $msg)){
                 print("RPC RESPONSE TGT REJECT" . $msg['error']);
                 $reject = $tgt->reject;
-                $reject($msg['error']);
+                call_user_func($reject,$msg['error']);
             }
             else {
  //               print("RPC RESPONSE TGT RESOLVE" . print_r($msg['result'], true));
                 $resolve = $tgt->resolve;
-                $resolve(array_key_exists('result',$msg) ? $msg['result'] : false);
+                call_user_func($resolve,array_key_exists('result',$msg) ? $msg['result'] : false);
             }
         }
 
@@ -374,7 +375,7 @@
         {
             $promise = $this->auth($cred['token']);
             $then = $promise->then;
-            $then(array($this,'on_auth_succeeded'), array($this,'on_auth_failed'));
+            call_user_func($then,array($this,'on_auth_succeeded'), array($this,'on_auth_failed'));
 //            echo '$promise type: ' . get_class($promise) . " ". print_r($promise, true) . "\r\n";
         }
 
@@ -402,17 +403,21 @@
 
         public function on($key, $fn=false)
         {
-            $bindEvent = function($fn) use (&$key, &$fn)
+//closure with $this
+            $evtMap = &$this->_evtTypeMap;
+            $bindEvent = function($fn) use (&$key, &$fn, &$evtMap)
             {
-                _setdefault($this->_evtTypeMap, $key, array());
-                $this->_evtTypeMap[$key][] = $fn;
+                //_setdefault($this->_evtTypeMap, $key, array());
+                //$this->_evtTypeMap[$key][] = $fn;
+                _setdefault($evtMap, $key, array());
+                $evtMap[$key][] = $fn;
                 return $fn;
             };
             if ($fn === false){
                 return $bindEvent;
             }
             else {
-                return $bindEvent($fn);
+                return call_user_func($bindEvent,$fn);
             }
         }
 
@@ -422,7 +427,7 @@
 //                print("evtmap for $key  " . print_r($this->_evtTypeMap[$key], true));
                 foreach ($this->_evtTypeMap[$key] as $fn){
                     //print("FN emit: " . print_r($fn, true));
-                    $fn($this, $params);
+                    call_user_func($fn,$this, $params);
                 }
             }
         }
@@ -563,17 +568,17 @@
         public $then = false;
         public function always($fn)
         {
-            return $this->$then($fn, $fn);
+            return call_user_func($this->$then,$fn, $fn);
         }
 
         public function fail($failure)
         {
-            return $this->$then(false,$failure);
+            return call_user_func($this->$then,false,$failure);
         }
 
         public function done($success)
         {
-            return $this->$then($success, false);
+            return call_user_func($this->$then,$success, false);
         }
     }
 
@@ -643,7 +648,7 @@
         $future = false;
         $reject = false;
         $resolve = false;
-
+//closure
         $then=function($success=false, $failure=false) use (&$cb, &$answer, &$future)
         {
             print_r('IN THEN for future #'. $future->myCounter);
@@ -655,6 +660,7 @@
         };
 
 
+//closure
         $resolve = function($result) use (&$cb, &$answer, &$future, &$resolve, &$reject)
         {
             print ("closure RESOLVE " .print_r($result, true));
@@ -662,18 +668,22 @@
             //print ("closure RESOLVE this" .print_r($this, true));
             while (count($cb) > 0){
                 $pair    = array_pop($cb);
+                print ("closure pair" .print_r($pair, true));
                 $success = $pair[0];
+                print ("closure pair success" .print_r($success, true));
                 $failure = $pair[1];
                 try {
                     if ($success){
-                        $res = $success($result);
+                        $res = call_user_func($success, $result);
+//                        $res = $success($result);
                         if ($res){
                             $result = $res;
                         }
                     }
                 } catch (Exception $err){
                     if ($failure) {
-                        $res = $failure($err);
+                        $res = call_user_func($failure, $err);
+//                        $res = $failure($err);
                     }
                     if (!$res){
                         return reject($err);
@@ -686,6 +696,7 @@
             $answer = partial($resolve,$result);//wtf partial?
         };
 
+//closure
         $reject = function ($error) use (&$cb, &$answer, &$future, &$reject)
         {
             while (count($cb) > 0){
@@ -693,7 +704,7 @@
                 $failure = $pair[1];
                 try {
                     if ($failure){
-                        $res = $failure($error);
+                        $res = call_user_func($failure,$error);
                         if ($res){
                             $error = $res;
                         }
@@ -752,8 +763,6 @@
         $app->perform(0,"testEvent");
     });
     while (true){
-        async::loop(false,array($app));
-        async::loop(false,array($app));
         async::loop(false,array($app));
     }
 
