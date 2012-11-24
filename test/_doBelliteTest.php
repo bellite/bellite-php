@@ -1,6 +1,10 @@
 <?php
     require_once "../bellite.php";
 
+//    print_r($_ENV);
+
+    setlocale(LC_ALL,'');
+
     $app = new Bellite(false, true);
     $app->ready(function() use (&$app){
         print ("READY");

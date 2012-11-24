@@ -1,10 +1,9 @@
 <?php
 
-    $host = "192.168.1.2";
-    $port = 8080;
-    $token  = '';
-
-    $id = 0;
+    //workaround for socket_recv on windows
+    //if (!defined('MSG_DONTWAIT')) { 
+        //define('MSG_DONTWAIT', 0x40);
+    //}
 
     /**
      * partial - clone of python partial function
@@ -792,7 +791,7 @@
             if ($this->conn && !socket_connect($this->conn, $cred['host'], $cred['port'])){
                 $this->conn = false;
             }
-            if (!socket_set_nonblock($this->conn)){
+            if ($this->conn && !socket_set_nonblock($this->conn)){
                 $this->conn = false;
             }
             if ($this->conn){
@@ -868,12 +867,12 @@
             $buf = $this->_buf;
             $part = '';
             while (true){
-                $len = @socket_recv($this->conn, $part, 4096, MSG_DONTWAIT);
-                if ($len === false && socket_last_error($this->conn) != 11){
+                $part = @socket_read($this->conn,4096);
+                if (!$part && socket_last_error($this->conn) != 11 && socket_last_error($this->conn) != 10035){
                     $this->close();
                     break;
                 }
-                if (!$len){
+                if (!$part){
                     break;
                 }
                 $buf .= $part;

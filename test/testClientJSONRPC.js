@@ -36,6 +36,7 @@ function createMockBelliteServer(ns) {
 
         var api = {
             sendMessage: function(msg) {
+                console.log("server send: " + msg)
                 return conn.write(msg+'\0') },
             shutdown: function() { return conn.end() },
             fireEvent: function(evtType, selfId, evt, ctx) {
@@ -247,6 +248,7 @@ if (!module.parent) {
         //token: 'bellite-demo-host',
 
         execClient: function(spawn) {
+            //spawn('c:\\php-5.3.19\\php.exe', [__dirname+'/_doBelliteTest.php'])
             spawn('php', [__dirname+'/_doBelliteTest.php'])
         }
     }, assetTestResults)
