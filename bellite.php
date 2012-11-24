@@ -6,6 +6,14 @@
 
     $id = 0;
 
+    /**
+     * partial - clone of python partial function
+     * 
+     * @param callback $func 
+     * @params ... $func - default params, passed to $func
+     * @access public
+     * @return callback
+     */
     function partial($func)
     {
         if (func_num_args() < 1){
@@ -14,8 +22,6 @@
 
         $params = array_slice(func_get_args(),1);
         $func   = func_get_arg(0);
-
-        //print_r(func_get_args());
 
 //closure
         return function() use ($params, $func)
@@ -30,6 +36,15 @@
         };
     }
 
+    /**
+     * _pop - python list pop clone
+     * 
+     * @param array $array 
+     * @param mixed $key 
+     * @param mixed $default_value 
+     * @access public
+     * @return mixed
+     */
     function _pop(&$array, $key, $default_value=false)
     {
         if (array_key_exists($key, $array))
@@ -44,6 +59,15 @@
         return $default_value;
     }
 
+    /**
+     * _setdefault - python setdefault clone
+     * 
+     * @param array $array 
+     * @param mixed $key 
+     * @param mixed $default_value 
+     * @access public
+     * @return mixed
+     */
     function _setdefault(&$array, $key, $default_value=false)
     {
         if (array_key_exists($key, $array))
@@ -60,52 +84,110 @@
 
 
 
-    function jsonRpcRequest ($host, $port, $method, $params)
-    {
-        global $id;
-        $id++;
-        $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-        if ($socket){
-            print "socket created successfully\r\n";
-        }
-        $isConnected = socket_connect($socket, $host, $port);
-        if ($isConnected){
-            print "socket connected successfully\r\n";
-        }
-
-        $requestString = json_encode(array("jsonrpc" => "2.0", "method" => $method, 'params' => $params, "id" => $id));
-        $writeLen = socket_write($socket, $requestString . "\0");
-        print "written: ".$requestString." len: ".$writeLen ."\r\n";
-        $response = socket_read($socket, 1000000);
-        print "READ: ". $response;
-    }
-
-//    print_r (json_decode($_ENV['BELLITE_SERVER']), true);
-    //
-    //
-    //
-    //
-    //
-
+    /**
+     * asyncConnection - interface, which implements python asynccore-like API for socket_select
+     * 
+     */
     interface asyncConnection
     {
+        /**
+         * fileno - should return connection resource
+         * 
+         * @access public
+         * @return resource
+         */
         public function fileno();
+
+        /**
+         * readable - if true, socket is readable
+         * 
+         * @access public
+         * @return boolean
+         */
         public function readable();
+
+        /**
+         * handle_read_event - called when some data readable
+         * 
+         * @access public
+         * @return void
+         */
         public function handle_read_event();
+
+        /**
+         * writable - if true, socket is writable
+         * 
+         * @access public
+         * @return boolean
+         */
         public function writable();
+
+        /**
+         * exceptable - if true, socket supports out-of-band data
+         * 
+         * @access public
+         * @return boolean
+         */
         public function exceptable();
+        
+        /**
+         * handle_write_event - called when all data sent and new data can be send
+         * 
+         * @access public
+         * @return void
+         */
         public function handle_write_event();
+
+        /**
+         * handle_expt_event - called when some out-of-band data ready
+         * 
+         * @access public
+         * @return void
+         */
         public function handle_expt_event();
+
+        /**
+         * handle_close - called when socket should be closed
+         * 
+         * @access public
+         * @return void
+         */
         public function handle_close();
+
+        /**
+         * handle_error - called when some error occurs
+         * 
+         * @access public
+         * @return void
+         */
         public function handle_error();
     }
 
+    /**
+     * async - class implements something like python asyncore
+     * 
+     */
     class async
     {
+        /**
+         *  $map - array of objects, implements asyncConnection
+         */
         static protected $map = array();
 
-        static function loop($timeout, $map)
+        /**
+         * check - checking sockets using socket_select
+         * 
+         * @param float $timeout (in seconds)
+         * @param array $map - list of objects, implements asyncConnection. If omitted, internal $map used
+         * @static
+         * @access public
+         * @return false, if all closed, number of changed sockets (in terms of socket_select) otherwise
+         */
+        static function check($timeout, $map=false)
         {
+            if ($map === false){
+                $map = self::$map;
+            }
             $readable = array();
             $writable = array();
             $excepted = array();
@@ -136,39 +218,64 @@
             }
             else {
                 $changedCount =  socket_select($readable, $writable, $excepted, floor($timeout),($timeout - floor($timeout))*1000000);
-//                print ("SELECT " .floor($timeout) . " " . ($timeout - floor($timeout))*1000000 . "\r\n");
             }
 
             if ($changedCount == 0){
- //               print ("SELECT: NOTHING\r\n");
-                return false;
+                return 0;
             }
-  //          print ("SELECT: SOMETHING " . $changedCount . "\r\n");
 
 
             foreach ($map as $obj){
                 if ($obj->writable() && array_search($obj->fileno(), $writeable) !== false){
-                    print ("handle write " . $obj->fileno() . "\r\n");
                     $obj->handle_write_event();
                 }
                 if ($obj->readable() && array_search($obj->fileno(), $readable) !== false){
-//                    print ("handle read " . $obj->fileno() . "\r\n");
                     $obj->handle_read_event();
                 }
                 if ($obj->exceptable() && array_search($obj->fileno(), $excepted) !== false){
-                    print ("handle write " . $obj->fileno() . "\r\n");
                     $obj->handle_expt_event();
                 }
             }
+            return $changedCount;
+        }
+
+        /**
+         * loop  - looping until all sockets closed
+         * 
+         * @param float $timeout socket_select timeout (passed to check)
+         * @param array $map - list of objects, implements asyncConnection. If omitted, internal $map used
+         * @static
+         * @access public
+         * @return void
+         */
+        static function loop($timeout, $map=false)
+        {
+            while (self::check($timeout, $map) !== false){ }
         }
     }
 
+    /**
+     * NotImplementedException - stub exception class, clone of python
+     * 
+     * @uses BadMethodCallException
+     */
     class NotImplementedException extends BadMethodCallException
     {}
 
 
+    /**
+     * BelliteJsonRpcApi - almost `abstract` class for extending
+     * 
+     */
     class BelliteJsonRpcApi 
     {
+        /**
+         * __construct 
+         * 
+         * @param string $cred - credentials: IP, port and token
+         * @access public
+         * @return void
+         */
         public function __construct($cred = false)
         {
             $cred = $this->findCredentials($cred);
@@ -177,21 +284,48 @@
             }
         }
 
+        /**
+         * auth - authorize on json-rpc
+         * 
+         * @param string $token - auth token
+         * @access public
+         * @return Promise object
+         */
         public function auth($token)
         {
             return $this->_invoke('auth',array($token));
         }
 
+        /**
+         * version - returns server version
+         * 
+         * @access public
+         * @return Promise object
+         */
         public function version()
         {
             return $this->_invoke('version');
         }
 
+        /**
+         * ping - pings server
+         * 
+         * @access public
+         * @return Promise object
+         */
         public function ping()
         {
             return $this->_invoke('ping');
         }
 
+        /**
+         * respondsTo 
+         * 
+         * @param int $selfId 
+         * @param string $cmd 
+         * @access public
+         * @return Promise object
+         */
         function respondsTo($selfId, $cmd)
         {
             if (!$selfId){
@@ -200,7 +334,16 @@
             return $this->_invoke('respondsTo', array($selfId, $cmd));
         }
 
-        function perform($selfId, $cmd, $params=false)
+        /**
+         * perform - call remote common-purpose methods
+         * 
+         * @param int $selfId 
+         * @param method $cmd 
+         * @param array $params 
+         * @access public
+         * @return Promise object
+         */
+        function perform($selfId, $cmd, $params=null)
         {
             if (!$selfId){
                 $selfId = 0;
@@ -208,6 +351,16 @@
             return $this->_invoke('perform', array($selfId, $cmd, $params));
         }
 
+        /**
+         * bindEvent - binds on some remote event
+         * 
+         * @param int $selfId 
+         * @param string $evtType - event type
+         * @param mixed $res  
+         * @param array $ctx - context
+         * @access public
+         * @return Promise object
+         */
         function bindEvent($selfId=0, $evtType='*', $res=-1, $ctx=false)
         {
             if (!$selfId){
@@ -216,14 +369,29 @@
             return $this->_invoke('bindEvent', array($selfId, $evtType, $res, $ctx));
         }
 
+        /**
+         * unbindEvent - remove event binding
+         * 
+         * @param int $selfId 
+         * @param string $evtType 
+         * @access public
+         * @return Promise object
+         */
         function unbindEvent($selfId=0, $evtType=false)
         {
             if (!$selfId){
                 $selfId = 0;
             }
-            return $this->_invoke('perform', array($selfId, $evtType));
+            return $this->_invoke('unbindEvent', array($selfId, $evtType));
         }
 
+        /**
+         * findCredentials - finds credentials in $cred or environment variable BELLITE_SERVER or use default
+         * 
+         * @param mixed $cred 
+         * @access public
+         * @return array
+         */
         function findCredentials($cred=false)
         {
             if (!$cred){
@@ -251,35 +419,102 @@
             return false;
         }
 
+        /**
+         * _connect - connects to remote server
+         * 
+         * @param array $cred 
+         * @access protected
+         * @return void
+         */
         protected function _connect($cred)
         {
             throw new NotImplementedException();
         }
 
+        /**
+         * _invoke - performs json-rpc call to remote server
+         * 
+         * @param string $method 
+         * @param array $params 
+         * @access protected
+         * @return void
+         */
         protected function _invoke($method, $params = array())
         {
             throw new NotImplementedException();
         }
     }
 
+    /**
+     * BelliteJsonRpc - next level of class extending
+     * 
+     */
     class BelliteJsonRpc extends BelliteJsonRpcApi
     {
+        /**
+         * _resultMap - array of Future objects
+         * 
+         * @access protected
+         */
         protected $_resultMap = array();
+
+        /**
+         * _evtTypeMap - array of events
+         * @access protected
+         */
         protected $_evtTypeMap = array();
+
+        /**
+         * _logging - boolean of logging
+         * 
+         * @access protected
+         */
         protected $_logging    = false;
+
+        /**
+         * _nextMsgId - autoincrement of json-rpc id field
+         * 
+         * @var float
+         * @access protected
+         */
         protected $_nextMsgId  = 100;
 
+
+        /**
+         * __construct - constructor
+         * 
+         * @param string $cred 
+         * @param boolean $logging 
+         * @access public
+         * @return void
+         */
         public function __construct($cred=false, $logging=false)
         {
             parent::__construct($cred);
             $this->_logging = $logging;
         }
 
-        protected function _notify ($method, $params)
+        /**
+         * _notify - call json-rpc method skipping result
+         * 
+         * @param string $method 
+         * @param array $params 
+         * @access protected
+         * @return false if socket closed
+         */
+        protected function _notify ($method, $params = array())
         {
             return $this->_sendJsonRpc($method, $params);
         }
 
+        /**
+         * _invoke - call json-rpc method and return Promise with answer
+         * 
+         * @param string $method 
+         * @param array $params 
+         * @access protected
+         * @return void
+         */
         protected function _invoke($method, $params = array())
         {
             $msgId = $this->_nextMsgId;
@@ -289,14 +524,29 @@
             return $res->promise; // var, not func
         }
 
+        /**
+         * _newResult - creating Future object, attached to $msgId and put it into $_resultMap
+         * 
+         * @param int $msgId 
+         * @access protected
+         * @return Future object
+         */
         protected function _newResult($msgId)
         {
             $res = deferred();
-            echo "_newResutl: " . get_class($res) . "\r\n";
             $this->_resultMap[$msgId] = $res;
             return $res;
         }
 
+        /**
+         * _sendJsonRpc - sends json-rpc call to remote server
+         * 
+         * @param string $method 
+         * @param array $params 
+         * @param integer $msgId 
+         * @access protected
+         * @return false if connection closed
+         */
         protected function _sendJsonRpc($method, $params=false, $msgId=false)
         {
             $msg = array("jsonrpc" => "2.0", "method" => $method, 'params' => $params);
@@ -307,24 +557,55 @@
             return $this->_sendMessage(json_encode($msg));
         }
 
+        /**
+         * _sendMessage - network json-rpc string send
+         * 
+         * @param string $msg 
+         * @access protected
+         * @return void
+         */
         protected function _sendMessage($msg)
         {
             throw new NotImplementedException();
         }
 
+        /**
+         * logSend - debug output of sent string
+         * 
+         * @param string $msg 
+         * @access public
+         * @return void
+         */
         public function logSend($msg)
         {
-            print("send ==> " . json_encode($msg)) . "\r\n";
+            if ($this->_logging){
+                print("send ==> " . json_encode($msg)) . "\r\n";
+            }
         }
         
+        /**
+         * logRecv - debug output of received string
+         * 
+         * @param string $msg 
+         * @access public
+         * @return void
+         */
         public function logRecv($msg)
         {
-            print("recv <== " . json_encode($msg)) . "\r\n";
+            if ($this->_logging){
+                print("recv <== " . json_encode($msg)) . "\r\n";
+            }
         }
 
+        /**
+         * _recvJsonRpc - receives json-rpc responses
+         * 
+         * @param array of strings $msgList 
+         * @access protected
+         * @return void
+         */
         protected function _recvJsonRpc($msgList)
         {
-//            print("_recvJsonRpc  :" . print_r($msgList,true));
             foreach ($msgList as $msg){
                 $msg = json_decode($msg, true);
                 $isCall = array_key_exists('method',$msg);
@@ -341,6 +622,13 @@
             }
         }
 
+        /**
+         * on_rpc_call - called on rpc callback and run some event
+         * 
+         * @param string $msg 
+         * @access public
+         * @return void
+         */
         public function on_rpc_call($msg)
         {
             if (array_key_exists("method", $msg) && $msg['method'] == 'event')
@@ -350,45 +638,66 @@
             }
         }
 
+        /**
+         * on_rpc_response - called on rpc response
+         * 
+         * @param string $msg 
+         * @access public
+         * @return void
+         */
         public function on_rpc_response($msg)
         {
-//            print("RPC RESPONSE " . print_r($this->_resultMap,true));
-//            print("RPC RESPONSE MSG " . print_r($msg,true));
             $tgt = _pop($this->_resultMap, $msg['id'], false);
-//            print("RPC RESPONSE TGT" . get_class($tgt));
             if (!$tgt){
                 return;
             }
             if (array_key_exists('error', $msg)){
-                print("RPC RESPONSE TGT REJECT" . $msg['error']);
                 $reject = $tgt->reject;
                 call_user_func($reject,$msg['error']);
             }
             else {
- //               print("RPC RESPONSE TGT RESOLVE" . print_r($msg['result'], true));
                 $resolve = $tgt->resolve;
                 call_user_func($resolve,array_key_exists('result',$msg) ? $msg['result'] : false);
             }
         }
 
+        /**
+         * on_connect - perform authorization and runs on_auth_succeeded or on_auth_failed
+         * 
+         * @param array $cred 
+         * @access public
+         * @return void
+         */
         public function on_connect($cred)
         {
             $promise = $this->auth($cred['token']);
             $then = $promise->then;
             call_user_func($then,array($this,'on_auth_succeeded'), array($this,'on_auth_failed'));
-//            echo '$promise type: ' . get_class($promise) . " ". print_r($promise, true) . "\r\n";
         }
 
+        /**
+         * on_auth_succeeded - called when on_connect authed successfully and emits auth and ready callbacks
+         * 
+         * @param mixed $msg 
+         * @access public
+         * @return void
+         */
         public function on_auth_succeeded($msg)
         {
-            echo ("AUTH OK ON\r\n");
+//            echo ("AUTH OK ON\r\n");
             $this->emit('auth',array(true, $msg));
             $this->emit('ready');
         }
 
+        /**
+         * on_auth_failed - called if on_connect failed to authorize, emits auth handler with error flag
+         * 
+         * @param mixed $msg 
+         * @access public
+         * @return void
+         */
         public function on_auth_failed($msg)
         {
-            print ("AUTH FAILED");
             $this->emit('auth', array(false, $msg));
         }
 
@@ -396,19 +705,32 @@
         #~ micro event implementation ~~~~~~~~~~~~~~~~~~~~~~~
         #
 
+        /**
+         * ready - adds user callback on ready event
+         * 
+         * @param function $fnReady 
+         * @access public
+         * @return function, passed as argument
+         */
         public function ready($fnReady)
         {
             return $this->on('ready', $fnReady);
         }
 
+        /**
+         * on - binds callback event handler on some condition
+         * 
+         * @param string $key 
+         * @param function $fn 
+         * @access public
+         * @return function
+         */
         public function on($key, $fn=false)
         {
 //closure with $this
-            $evtMap = &$this->_evtTypeMap;
+            $evtMap = &$this->_evtTypeMap; //5.3 closure with $this workaround
             $bindEvent = function($fn) use (&$key, &$fn, &$evtMap)
             {
-                //_setdefault($this->_evtTypeMap, $key, array());
-                //$this->_evtTypeMap[$key][] = $fn;
                 _setdefault($evtMap, $key, array());
                 $evtMap[$key][] = $fn;
                 return $fn;
@@ -421,23 +743,33 @@
             }
         }
 
+        /**
+         * emit - calls event handler(s) for event $key with $params
+         * 
+         * @param string $key 
+         * @param array $params 
+         * @access public
+         * @return void
+         */
         public function emit($key, $params = array())
         {
             if (array_key_exists($key, $this->_evtTypeMap)){
-//                print("evtmap for $key  " . print_r($this->_evtTypeMap[$key], true));
                 foreach ($this->_evtTypeMap[$key] as $fn){
-                    //print("FN emit: " . print_r($fn, true));
                     call_user_func($fn,$this, $params);
                 }
             }
         }
     }
 
+    /**
+     * Bellite - class for Bellite access
+     * 
+     * @uses BelliteJsonRpc
+     * @uses asyncConnection
+     */
     class Bellite extends BelliteJsonRpc implements asyncConnection
     {
-        public $timeout_conn = 0.5;
-        public $timeout_send = 0.01;
-        public $timeout_recv = 0.000001;
+        public $timeout = 0.5;
 
         public $conn = false;
         protected $_buf = ''; 
@@ -447,6 +779,13 @@
             parent::__construct($cred,$logging);
         }
 
+        /**
+         * _connect - real socket connect to Bellite json-rpc server
+         * 
+         * @param array $cred 
+         * @access protected
+         * @return void
+         */
         protected function _connect($cred)
         {
             $this->conn = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
@@ -461,22 +800,41 @@
             }
         }
 
+        /**
+         * _sendMessage - sends message into socket
+         * 
+         * @param string $msg 
+         * @access protected
+         * @return void
+         */
         protected function _sendMessage($msg)
         {
             if (!$this->isConnected()){
                 return false;
             }
             socket_write($this->conn, $msg . "\0");
+            return true;
         }
 
+        /**
+         * isConnected - returns is Bellite socket connected or not
+         * 
+         * @access public
+         * @return boolean
+         */
         public function isConnected()
         {
             return $this->conn !== false;
         }
 
+        /**
+         * close - closes socket
+         * 
+         * @access public
+         * @return false if already closed
+         */
         public function close()
         {
-            echo "CLOSE!";
             if ($this->conn){
                 socket_close($this->conn);
                 $this->conn = false;
@@ -487,29 +845,31 @@
         }
 
 
+        /**
+         * fileno - part of asyncConnection interface
+         * 
+         * @access public
+         * @return void
+         */
         public function fileno()
         {
             return $this->conn;
         }
+
         public function readable()
         {
             return true;
         }
         public function handle_read_event()
         {
-//            print ("in: handle_read_event\r\n");
             if (!$this->isConnected()){
                 return false;
             }
-            //print ("in: handle_read_event: connected\r\n");
             $buf = $this->_buf;
-            //print ("in: handle_read_event: buf '" . $buf . "'\r\n");
             $part = '';
             while (true){
                 $len = @socket_recv($this->conn, $part, 4096, MSG_DONTWAIT);
-                //print ("in: handle_read_event: part: '" . $buf . "' " . strlen($buf) . "\r\n");
                 if ($len === false && socket_last_error($this->conn) != 11){
-                    //print ("len false");
                     $this->close();
                     break;
                 }
@@ -519,9 +879,7 @@
                 $buf .= $part;
             }
             $buf = explode("\0",$buf); #??
-            //print ("in: handle_read_event: buf explode: " . print_r($buf,true) . "\r\n");
             $this->_buf = array_pop($buf);
-            //print ("in: handle_read_event: this->buf : " . print_r($buf,true) . "\r\n");
             $this->_recvJsonRpc($buf);
             return true;
         }
@@ -542,17 +900,23 @@
         }
         public function handle_expt_event()
         {
-            print ("EXPT len false");
             $this->close();
         }
         public function handle_close()
         {
-            print ("HANDLE len false");
             $this->close();
         }
         public function handle_error()
         {
             //error
+        }
+
+        public function loop($timeout = false)
+        {
+            if ($timeout === false){
+                $timeout = $this->timeout;
+            }
+            async::loop($timeout, array($this));
         }
     }
 
@@ -563,9 +927,20 @@
     # */
     #
 
+    /**
+     * PromiseApi - `abstract` promise class
+     * 
+     */
     class PromiseApi
     {
+        /**
+         * then - function,
+         * 
+         * @var function
+         * @access public
+         */
         public $then = false;
+
         public function always($fn)
         {
             return call_user_func($this->$then,$fn, $fn);
@@ -588,8 +963,6 @@
         {
             if ($then){
                 $this->then = $then;
-//                echo "PROMISE THEN";
-                print_r($this->then);
             }
         }
 
@@ -611,7 +984,6 @@
         public function __construct($then, $resolve=false, $reject=false)
         {
             $this->myCounter = self::$counter;
-            print("Future #" . $this->myCounter . "\r\n");
             self::$counter++;
 
             $this->promise = new Promise($then);
@@ -622,18 +994,6 @@
                 $this->reject = $reject;
             }
         }
-
-/*        function __call($name, $args)
-        {
-            if ($name == 'resolve' && $this->resolve){
-                $fn = $this->resolve;
-                $fn($args[0]);
-            }
-            if ($name == 'reject' && $this->reject){
-                $fn = $this->rejecct;
-                $fn($args[0]);
-            }
-        } */
 
         function then()
         {
@@ -651,31 +1011,24 @@
 //closure
         $then=function($success=false, $failure=false) use (&$cb, &$answer, &$future)
         {
-            print_r('IN THEN for future #'. $future->myCounter);
             $cb[] = array($success, $failure);
             if ($answer){
                 call_user_func($answer);
             }
-            return $future->promise; //TODO: how it should works? func as object...
+            return $future->promise; 
         };
 
 
 //closure
         $resolve = function($result) use (&$cb, &$answer, &$future, &$resolve, &$reject)
         {
-            print ("closure RESOLVE " .print_r($result, true));
-            //print ("closure RESOLVE CB" .print_r($cb, true));
-            //print ("closure RESOLVE this" .print_r($this, true));
             while (count($cb) > 0){
                 $pair    = array_pop($cb);
-                print ("closure pair" .print_r($pair, true));
                 $success = $pair[0];
-                print ("closure pair success" .print_r($success, true));
                 $failure = $pair[1];
                 try {
                     if ($success){
                         $res = call_user_func($success, $result);
-//                        $res = $success($result);
                         if ($res){
                             $result = $res;
                         }
@@ -683,17 +1036,16 @@
                 } catch (Exception $err){
                     if ($failure) {
                         $res = call_user_func($failure, $err);
-//                        $res = $failure($err);
                     }
                     if (!$res){
-                        return reject($err);
+                        return call_user_func($reject, $err);
                     }
                     else {
-                        return reject($res);
+                        return call_user_func($reject, $res);
                     }
                 }
             }
-            $answer = partial($resolve,$result);//wtf partial?
+            $answer = partial($resolve,$result);
         };
 
 //closure
@@ -716,13 +1068,10 @@
                     }
                 }
             }
-            $answer = partial($reject,$error);//wtf partial?
+            $answer = partial($reject,$error);
         };
 
-        //$this = Future(then, resolve, reject); //
-        //return $this;
         $future = new Future($then, $resolve, $reject);
-//        print ("NEW FUTURE #" . $future->myCounter . " " . print_r($future, true));
         return $future;
     }
 
@@ -730,45 +1079,31 @@
 
 
 
-    $cred = $_ENV['BELLITE_SERVER'];
-    $host = substr($cred,0,strpos($cred,':'));
-    $port = substr($cred,strpos($cred,':') +1,strpos($cred,'/') - strpos($cred,':') -1);
-    $token = substr($cred,strpos($cred,'/') +1);
-
-//    print_r(array( $host, $port, $token));
-
-//    print ("!!!!" .print_r(explode("\0", "aaaa\0"),true));
-    $app = new Bellite();
-    $app->ready(function() use (&$app){
-        print ("READY");
-        $app->ping();
-        $app->version();
-        $app->perform(142, "echo", array("name" => array(false, true, 42, "value")));
-
-        $app->bindEvent(118, "*");
-        $app->unbindEvent(118, "*");
-
-        $app->on('testEvent', function($app, $eobj){
-            print "TEST EVENT\r\n";
-            print_r($eobj);
-            if (isset($eobj['evt'])){
-                $app->perform(0,$eobj['evt']);
-            }
-            else {
-                $app->close();
-            }
-        });
-
-        $app->bindEvent(0,"testEvent", 42, array('testCtx' => true));
-        $app->perform(0,"testEvent");
-    });
-    while (true){
-        async::loop(false,array($app));
-    }
-
-//    print_r ($api->findCredentials());
-
-//    print_r($_ENV);
 
 
-//    jsonRpcRequest($host, $port, "ping", array("name" => "lalala"));
+    //$app = new Bellite();
+    //$app->ready(function() use (&$app){
+        //print ("READY");
+        //$app->ping();
+        //$app->version();
+        //$app->perform(142, "echo", array("name" => array(false, true, 42, "value")));
+
+        //$app->bindEvent(118, "*");
+        //$app->unbindEvent(118, "*");
+
+        //$app->on('testEvent', function($app, $eobj){
+            //print "TEST EVENT\r\n";
+            //print_r($eobj);
+            //if (isset($eobj['evt'])){
+                //$app->perform(0,$eobj['evt']);
+            //}
+            //else {
+                //$app->close();
+            //}
+        //});
+
+        //$app->bindEvent(0,"testEvent", 42, array('testCtx' => 'lalala'));
+        //$app->perform(0,"testEvent");
+    //});
+    //$app->loop();
+
