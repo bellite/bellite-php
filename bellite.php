@@ -247,9 +247,13 @@
          * @access public
          * @return void
          */
-        static function loop($timeout, $map=false)
+        static function loop($timeout, $map=false, $count=-1)
         {
-            while (self::check($timeout, $map) !== false){ }
+            do {
+                $res = self::check($timeout, $map) !== false;
+                $count--;
+            } while (!$res && ($count != 0));
+            return $res;
         }
     }
 
@@ -913,7 +917,7 @@
             if ($timeout === false){
                 $timeout = $this->timeout;
             }
-            async::loop($timeout, array($this));
+            return async::loop($timeout, array($this), 1);
         }
     }
 
