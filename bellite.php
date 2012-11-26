@@ -364,7 +364,7 @@
          * @access public
          * @return Promise object
          */
-        function bindEvent($selfId=0, $evtType='*', $res=-1, $ctx=false)
+        function bindEvent($selfId=0, $evtType='*', $res=-1, $ctx=null)
         {
             if (!$selfId){
                 $selfId = 0;
@@ -380,7 +380,7 @@
          * @access public
          * @return Promise object
          */
-        function unbindEvent($selfId=0, $evtType=false)
+        function unbindEvent($selfId=0, $evtType=null)
         {
             if (!$selfId){
                 $selfId = 0;
@@ -395,7 +395,7 @@
          * @access public
          * @return array
          */
-        function findCredentials($cred=false)
+        function findCredentials($cred=null)
         {
             if (!$cred){
                 $cred = getenv('BELLITE_SERVER');
