@@ -394,10 +394,8 @@
         function findCredentials($cred=false)
         {
             if (!$cred){
-                if (array_key_exists('BELLITE_SERVER', $_ENV)){
-                    $cred = $_ENV['BELLITE_SERVER'];
-                }
-                else {
+                $cred = getenv('BELLITE_SERVER');
+                if (!$cred) {
                     $cred = '127.0.0.1:3099/bellite-demo-host';
                     fwrite(STDERR,'BELLITE_SERVER environment variable not found, using "' . $cred . '"');
                 }
