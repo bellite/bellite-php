@@ -440,7 +440,7 @@
          * @access protected
          * @return void
          */
-        protected function _invoke($method, $params = array())
+        protected function _invoke($method, $params = null)
         {
             throw new NotImplementedException();
         }
@@ -516,7 +516,7 @@
          * @access protected
          * @return void
          */
-        protected function _invoke($method, $params = array())
+        protected function _invoke($method, $params = null)
         {
             $msgId = $this->_nextMsgId;
             $this->_nextMsgId = $msgId +1;
@@ -548,10 +548,13 @@
          * @access protected
          * @return false if connection closed
          */
-        protected function _sendJsonRpc($method, $params=false, $msgId=false)
+        protected function _sendJsonRpc($method, $params=null, $msgId=null)
         {
-            $msg = array("jsonrpc" => "2.0", "method" => $method, 'params' => $params);
-            if ($msgId){
+            $msg = array("jsonrpc" => "2.0", "method" => $method);
+            if ($params!==null){
+                $msg['params'] = $params;
+            }
+            if ($msgId!==null){
                 $msg['id'] = $msgId;
             }
             $this->logSend($msg);
