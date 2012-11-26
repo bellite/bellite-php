@@ -870,11 +870,11 @@
             $part = '';
             while (true){
                 $part = @socket_read($this->conn,4096);
-                if (!$part && socket_last_error($this->conn) != 11 && socket_last_error($this->conn) != 10035){
-                    $this->close();
-                    break;
-                }
                 if (!$part){
+                    // test to see if error was SOCKET_EWOULDBLOCK and SOCKET_EAGAIN
+                    if (!in_array(socket_last_error($this->conn), array(11,35,10035))) {
+                        $this->close();
+                    }
                     break;
                 }
                 $buf .= $part;
