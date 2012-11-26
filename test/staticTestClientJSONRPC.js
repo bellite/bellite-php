@@ -20,7 +20,7 @@ test.testBelliteJSONRPC({
         console.log('set BELLITE_SERVER="'+process.env.BELLITE_SERVER+'"')
 
         console.log('\n# Run Belllite Client JSON-RPC')
-        console.log('python "'+__dirname+'/_doBelliteTest.py'+'"')
+        spawn('php', [__dirname+'/_doBelliteTest.php'])
     }
 }, test.assetTestResults)
 
