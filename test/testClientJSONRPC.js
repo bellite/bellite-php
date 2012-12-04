@@ -176,9 +176,9 @@ function testBelliteJSONRPC(opt, doneCallback) {
             return Object.create(rpc).connect(api) }
     })
 
-    function spawnClient(exec, args) {
+    function spawnClient(exec, args, cwd) {
         var cp = require('child_process')
-        test.proc = cp.spawn(exec, args, {stdio:'inherit',cwd:__dirname})
+        test.proc = cp.spawn(exec, args, {stdio:'inherit',cwd:cwd||__dirname})
         test.proc.on('exit', function(code, signal) {
             log('process_exit', code, signal)
             test.proc = false;
@@ -251,14 +251,13 @@ exports.assetTestResults = assetTestResults;
 if (!module.parent) {
     // test the bellist JSON-RPC interactions
     testBelliteJSONRPC({
-        debugLog: console.log,
+        //debugLog: console.log,
         timeout: 2000,
         //timeout: false,
         //port: 3099,
         //token: 'bellite-demo-host',
 
         execClient: function(spawn) {
-            //spawn('c:\\php-5.3.19\\php.exe', [__dirname+'/_doBelliteTest.php'])
             spawn('php', [__dirname+'/_doBelliteTest.php'])
         }
     }, assetTestResults)
