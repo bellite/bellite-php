@@ -1,83 +1,5 @@
 <?php
     /**
-     * partial - clone of python partial function
-     * 
-     * @param callback $func 
-     * @params ... $func - default params, passed to $func
-     * @access public
-     * @return callback
-     */
-    function partial($func)
-    {
-        if (func_num_args() < 1){
-            return null;
-        }
-
-        $params = array_slice(func_get_args(),1);
-        $func   = func_get_arg(0);
-
-//closure
-        return function() use ($params, $func)
-        {
-            $new_params = func_get_args();
-            $merged_params = $params;
-            foreach ( $new_params as $key => $value){
-                $merged_params[$key] = $new_params[$key];
-            }
-
-            call_user_func($func, $merged_params);
-        };
-    }
-
-    /**
-     * _pop - python list pop clone
-     * 
-     * @param array $array 
-     * @param mixed $key 
-     * @param mixed $default_value 
-     * @access public
-     * @return mixed
-     */
-    function _pop(&$array, $key, $default_value=false)
-    {
-        if (array_key_exists($key, $array))
-        {
-            $result = $array[$key];
-            unset($array[$key]);
-            return $result;
-        }
-        if ($default_value === false){
-            return;
-        }
-        return $default_value;
-    }
-
-    /**
-     * _setdefault - python setdefault clone
-     * 
-     * @param array $array 
-     * @param mixed $key 
-     * @param mixed $default_value 
-     * @access public
-     * @return mixed
-     */
-    function _setdefault(&$array, $key, $default_value=false)
-    {
-        if (array_key_exists($key, $array))
-        {
-            return $array[$key];
-        }
-        else {
-            if ($default_value !== false){
-                $array[$key] = $default_value;
-                return $default_value;
-            }
-        }
-    }
-
-
-
-    /**
      * asyncConnection - interface, which implements python asynccore-like API for socket_select
      * 
      */
@@ -275,10 +197,7 @@
          */
         public function __construct($cred = false)
         {
-            $cred = $this->findCredentials($cred);
-            if ($cred){
-                $this->_connect($cred);
-            }
+            $this->connect($cred);
         }
 
         /**
@@ -415,13 +334,32 @@
         }
 
         /**
+         * connect - connects to remote server
+         * 
+         * @param array $cred 
+         * @access public
+         * @return Promise object
+         */
+        protected function connect($cred=false)
+        {
+            $cred = $this->findCredentials($cred);
+            if ($cred){
+                $f_ready = deferred();
+                $this->ready = $f_ready->promise;
+                $this->_connect($cred, $f_ready);
+                return $this->ready;
+            }
+        }
+
+        /**
          * _connect - connects to remote server
          * 
          * @param array $cred 
+         * @param Future $f_ready 
          * @access protected
          * @return void
          */
-        protected function _connect($cred)
+        protected function _connect($cred, $f_ready)
         {
             throw new NotImplementedException();
         }
@@ -645,10 +583,11 @@
          */
         public function on_rpc_response($msg)
         {
-            $tgt = _pop($this->_resultMap, $msg['id'], false);
-            if (!$tgt){
+            $tgt = $this->_resultMap[$msg['id']];
+            if ($tgt===null){
                 return;
             }
+            unset($this->_resultMap[$msg['id']]);
             if (array_key_exists('error', $msg)){
                 $reject = $tgt->reject;
                 call_user_func($reject,$msg['error']);
@@ -663,13 +602,15 @@
          * on_connect - perform authorization and runs on_auth_succeeded or on_auth_failed
          * 
          * @param array $cred 
+         * @param Future $f_ready 
          * @access public
          * @return void
          */
-        public function on_connect($cred)
+        public function on_connect($cred, $f_ready)
         {
             $promise = $this->auth($cred['token']);
             $then = $promise->then;
+            call_user_func($then,array($f_ready,'resolve'), array($f_ready,'reject'));
             call_user_func($then,array($this,'on_auth_succeeded'), array($this,'on_auth_failed'));
         }
 
@@ -682,7 +623,6 @@
          */
         public function on_auth_succeeded($msg)
         {
-//            echo ("AUTH OK ON\r\n");
             $this->emit('auth',array(true, $msg));
             $this->emit('ready');
         }
@@ -704,18 +644,6 @@
         #
 
         /**
-         * ready - adds user callback on ready event
-         * 
-         * @param function $fnReady 
-         * @access public
-         * @return function, passed as argument
-         */
-        public function ready($fnReady)
-        {
-            return $this->on('ready', $fnReady);
-        }
-
-        /**
          * on - binds callback event handler on some condition
          * 
          * @param string $key 
@@ -729,7 +657,9 @@
             $evtMap = &$this->_evtTypeMap; //5.3 closure with $this workaround
             $bindEvent = function($fn) use (&$key, &$fn, &$evtMap)
             {
-                _setdefault($evtMap, $key, array());
+                if (!array_key_exists($key, $evtMap)){
+                    $evtMap[$key] = array();
+                }
                 $evtMap[$key][] = $fn;
                 return $fn;
             };
@@ -781,10 +711,11 @@
          * _connect - real socket connect to Bellite json-rpc server
          * 
          * @param array $cred 
+         * @param Future $f_ready 
          * @access protected
          * @return void
          */
-        protected function _connect($cred)
+        protected function _connect($cred, $f_ready)
         {
             $this->conn = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
             if ($this->conn && !socket_connect($this->conn, $cred['host'], $cred['port'])){
@@ -794,7 +725,7 @@
                 $this->conn = false;
             }
             if ($this->conn){
-                $this->on_connect($cred);
+                $this->on_connect($cred, $f_ready);
             }
         }
 
@@ -931,6 +862,24 @@
      */
     class PromiseApi
     {
+        public function always($fn)
+        {
+            return $this->then($fn, $fn);
+        }
+
+        public function fail($failure)
+        {
+            return $this->then(false, $failure);
+        }
+
+        public function done($success)
+        {
+            return $this->then($success, false);
+        }
+    }
+
+    class Promise extends PromiseApi
+    {
         /**
          * then - function,
          * 
@@ -939,24 +888,6 @@
          */
         public $then = false;
 
-        public function always($fn)
-        {
-            return call_user_func($this->$then,$fn, $fn);
-        }
-
-        public function fail($failure)
-        {
-            return call_user_func($this->$then,false,$failure);
-        }
-
-        public function done($success)
-        {
-            return call_user_func($this->$then,$success, false);
-        }
-    }
-
-    class Promise extends PromiseApi
-    {
         public function __construct($then)
         {
             if ($then){
@@ -968,6 +899,11 @@
         {
             return $this;
         }
+
+        public function then($success=false, $failure=false)
+        {
+            return call_user_func($this->then, $success, $failure);
+        }
     }
 
     class Future extends PromiseApi
@@ -976,14 +912,8 @@
         public $resolve = false;
         public $reject = false;
 
-        static public $counter = 0;
-        public $myCounter = 0;
-
         public function __construct($then, $resolve=false, $reject=false)
         {
-            $this->myCounter = self::$counter;
-            self::$counter++;
-
             $this->promise = new Promise($then);
             if ($resolve){
                 $this->resolve = $resolve;
@@ -993,9 +923,17 @@
             }
         }
 
-        function then()
+        public function resolve($res=true)
         {
-            return $this->promise->then;
+            return call_user_func($this->resolve, $res);
+        }
+        public function reject($err=true)
+        {
+            return call_user_func($this->reject, $err);
+        }
+        public function then($success=false, $failure=false)
+        {
+            return $this->promise->then($success, $failure);
         }
     }
 
@@ -1021,13 +959,13 @@
         $resolve = function($result) use (&$cb, &$answer, &$future, &$resolve, &$reject)
         {
             while (count($cb) > 0){
-                $pair    = array_pop($cb);
+                $pair    = array_shift($cb);
                 $success = $pair[0];
                 $failure = $pair[1];
                 try {
                     if ($success){
                         $res = call_user_func($success, $result);
-                        if ($res){
+                        if ($res!==null){
                             $result = $res;
                         }
                     }
@@ -1043,19 +981,21 @@
                     }
                 }
             }
-            $answer = partial($resolve,$result);
+            $answer = (function() use (&$resolve, &$result) {
+                call_user_func($resolve, $result);
+            });
         };
 
 //closure
         $reject = function ($error) use (&$cb, &$answer, &$future, &$reject)
         {
             while (count($cb) > 0){
-                $pair    = array_pop($cb);
+                $pair    = array_shift($cb);
                 $failure = $pair[1];
                 try {
                     if ($failure){
                         $res = call_user_func($failure,$error);
-                        if ($res){
+                        if ($res!==null){
                             $error = $res;
                         }
                     }
@@ -1066,7 +1006,9 @@
                     }
                 }
             }
-            $answer = partial($reject,$error);
+            $answer = (function() use (&$reject, &$error) {
+                call_user_func($reject, $error);
+            });
         };
 
         $future = new Future($then, $resolve, $reject);
