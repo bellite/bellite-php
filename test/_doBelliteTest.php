@@ -4,7 +4,7 @@
     setlocale(LC_ALL,'');
 
     $app = new Bellite();
-    $app->on("ready", function() use (&$app){
+    $app->ready->done(function() use (&$app){
         $app->ping();
         $app->version();
         $app->perform(142, "echo", array("name" => array(false, true, 42, "value")));
