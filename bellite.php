@@ -453,7 +453,9 @@
             $msgId = $this->_nextMsgId;
             $this->_nextMsgId = $msgId +1;
             $res   = $this->_newResult($msgId);
-            $this->_sendJsonRpc($method, $params, $msgId);
+            if (!$this->_sendJsonRpc($method, $params, $msgId)) {
+                call_user_func($res->reject, 'Bellite client not connected');
+            }
             return $res->promise; // var, not func
         }
 
@@ -592,9 +594,11 @@
                 $reject = $tgt->reject;
                 call_user_func($reject,$msg['error']);
             }
+            else if ($msg['result'][0]){
+                call_user_func($tgt->reject, $msg['result']);
+            }
             else {
-                $resolve = $tgt->resolve;
-                call_user_func($resolve,array_key_exists('result',$msg) ? $msg['result'] : false);
+                call_user_func($tgt->resolve, $msg['result']);
             }
         }
 
